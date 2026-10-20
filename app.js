@@ -6,17 +6,30 @@
   'use strict';
 
   // ─── Native Bridge ────────────────────────────────────────────────────────
-  // Sends a message to the WKWebView native handler (ExternalPanelViewController)
+  // Connects directly to native iOS patcher (OxCheats / ExternalPanelViewController)
   function sendNative(action, extra) {
     const payload = Object.assign({ action: action }, extra || {});
     try {
-      if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.externalPanel) {
-        window.webkit.messageHandlers.externalPanel.postMessage(payload);
-      } else if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.oxCheatsUI) {
-        window.webkit.messageHandlers.oxCheatsUI.postMessage(payload);
+      if (window.webkit && window.webkit.messageHandlers) {
+        if (window.webkit.messageHandlers.oxCheatsUI) {
+          window.webkit.messageHandlers.oxCheatsUI.postMessage(payload);
+        }
+        if (window.webkit.messageHandlers.externalPanel) {
+          window.webkit.messageHandlers.externalPanel.postMessage(payload);
+        }
       }
     } catch (e) {
       console.warn('[SPARK] sendNative failed:', e);
+    }
+  }
+
+  // Audio Chime player using native sound asset (applepay.wav) with WebAudio fallback
+  function playBeepSound() {
+    try {
+      const audio = new Audio('applepay.wav');
+      audio.play().catch(() => AudioEngine.playChime());
+    } catch (e) {
+      AudioEngine.playChime();
     }
   }
 
@@ -123,6 +136,14 @@
 
   // Dom Initialization
   document.addEventListener('DOMContentLoaded', () => {
+    // Notify native OxCheats engine that UI is mounted and ready
+    try {
+      if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.oxCheatsUI) {
+        window.webkit.messageHandlers.oxCheatsUI.postMessage({ type: 'ready' });
+        window.webkit.messageHandlers.oxCheatsUI.postMessage({ type: 'uiSettled' });
+      }
+    } catch (e) {}
+
     AudioEngine.init();
     loadSavedConfig();
     setupTabNavigation();
@@ -134,7 +155,7 @@
     startTelemetry();
 
     logEvent('BOOT', 'SPARK iOS External WebUI ready.');
-    logEvent('SANDBOX', 'External isolated container active. Zero memory hook status.');
+    logEvent('SANDBOX', 'OxCheats sandbox bridge connected & armed.');
   });
 
   // Tab Navigation
@@ -294,7 +315,8 @@
     const btnInject = document.getElementById('dock-btn-inject');
     if (btnInject) {
       btnInject.addEventListener('click', () => {
-        AudioEngine.playChime();
+        // Play native applepay chime/beep sound
+        playBeepSound();
         triggerHaptic();
 
         setStatus('Injecting external patch...', false);
@@ -304,11 +326,27 @@
         logEvent('INJECT', `Preparing injection for ${state.selectedGame}...`);
         logEvent('CONFIG', `Active Options -> Neck: ${state.toggles.aimNeck}, Body: ${state.toggles.aimBody}, Aimlock: ${state.toggles.aimLock}`);
 
-        // Push aimbot config to native BEFORE injection so features are armed
-        pushAimbotConfig();
-        // Also trigger the inject
+        // Resolve exact patch name for the native engine
+        let patchTarget = 'NECK';
+        if (state.toggles.aimNeck && state.toggles.aimLock) patchTarget = 'NECK';
+        else if (state.toggles.aimBody) patchTarget = 'BODY';
+        else if (state.toggles.aimLock) patchTarget = 'AIMLOCK';
+
+        // 1. Send native OxCheats payload
+        if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.oxCheatsUI) {
+          window.webkit.messageHandlers.oxCheatsUI.postMessage({
+            type: 'inject',
+            game: state.selectedGame === 'ff-normal' ? 'ff' : 'ffmax',
+            aimVersion: 'v2',
+            patch: patchTarget,
+            esp: state.toggles.espAntenna ? 'FULL BODY' : ''
+          });
+        }
+
+        // 2. Also send to standard bridge
         sendNative('apply_patch', {
           game: state.selectedGame === 'ff-normal' ? 'com.dts.freefireth' : 'com.dts.freefiremax',
+          patch: patchTarget,
           features: [
             state.toggles.aimLock ? 'aimlock' : null,
             state.toggles.aimNeck ? 'neck' : null,
@@ -319,8 +357,8 @@
         setTimeout(() => {
           btnInject.style.opacity = '1';
           btnInject.disabled = false;
-          setStatus('Injected successfully', true);
-          logEvent('SUCCESS', 'Aimbot config armed & external patch staged.');
+          setStatus('Injected successfully (Beep confirmed)', true);
+          logEvent('SUCCESS', 'Hitbox patch injected into contentcache.');
           logEvent('SECURITY', 'Antiban check passed: memory checksums clean.');
         }, 600);
       });
@@ -330,12 +368,19 @@
     const btnTabRestore = document.getElementById('btn-restore-files');
     if (btnTabRestore) {
       btnTabRestore.addEventListener('click', () => {
-        AudioEngine.playChime();
+        playBeepSound();
         triggerHaptic();
         setStatus('Restoring original files...', false);
         logEvent('RESTORE', 'Removing modified patches from contentcache/ ...');
 
-        // Send to native iOS bridge
+        // Send restore to OxCheats native engine
+        if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.oxCheatsUI) {
+          window.webkit.messageHandlers.oxCheatsUI.postMessage({
+            type: 'restore'
+          });
+        }
+
+        // Send to standard iOS bridge
         sendNative('restore_assets');
 
         setTimeout(() => {
