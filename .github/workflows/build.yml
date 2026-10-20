@@ -1,0 +1,38 @@
+name: Build iOS External Panel IPA
+
+on: [push, workflow_dispatch]
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Compile and Package IPA
+        run: |
+          mkdir -p build_app/Payload/SPARKPanel.app
+          
+          xcrun -sdk iphoneos clang++ -arch arm64 -miphoneos-version-min=14.0 \
+            -std=c++17 -fobjc-arc -I. \
+            -framework UIKit -framework Foundation -framework WebKit -framework Security \
+            main.m \
+            AppDelegate.m \
+            ExternalPanelViewController.mm \
+            -o build_app/Payload/SPARKPanel.app/SPARKPanel
+
+          cp Info.plist build_app/Payload/SPARKPanel.app/Info.plist
+          cp index.html build_app/Payload/SPARKPanel.app/index.html
+          cp app.js build_app/Payload/SPARKPanel.app/app.js
+          cp style.css build_app/Payload/SPARKPanel.app/style.css
+
+          mkdir -p packages
+          cd build_app
+          zip -r ../packages/SPARK_External_Panel.ipa Payload/
+          cd ..
+
+      - name: Upload IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SPARK_External_Panel_IPA
+          path: packages/SPARK_External_Panel.ipa
