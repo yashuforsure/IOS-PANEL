@@ -16,8 +16,8 @@ jobs:
           xcrun -sdk iphoneos clang++ -arch arm64 -miphoneos-version-min=14.0 \
             -std=c++17 -fobjc-arc -I. \
             -framework UIKit -framework Foundation -framework WebKit -framework Security \
-            main.m \
-            AppDelegate.m \
+            main.mm \
+            AppDelegate.mm \
             ExternalPanelViewController.mm \
             -o build_app/Payload/SPARKPanel.app/SPARKPanel
 
