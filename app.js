@@ -109,19 +109,43 @@
     }
   }
 
-  // Console Logging Helper
-  function logEvent(type, message) {
-    const consoleLogs = document.getElementById('console-logs');
-    if (!consoleLogs) return;
-
-    const row = document.createElement('div');
-    row.className = 'log-line';
+  // Console Logging Helper (writes to both Aimbot tab terminal and Antiban terminal)
+  function logEvent(type, message, isError = false) {
+    const targets = ['console-logs', 'console-logs-aimbot'];
     const now = new Date();
     const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
-    row.innerHTML = `<span class="log-time">[${timeStr}]</span> <strong>[${type}]</strong> ${message}`;
-    consoleLogs.appendChild(row);
-    consoleLogs.scrollTop = consoleLogs.scrollHeight;
+    const color = isError ? '#ff2a55' : (type === 'SUCCESS' ? '#00f076' : '#00f0ff');
+
+    targets.forEach(id => {
+      const container = document.getElementById(id);
+      if (!container) return;
+      const row = document.createElement('div');
+      row.className = 'log-line';
+      row.innerHTML = `<span class="log-time" style="color:#aaa;">[${timeStr}]</span> <span style="color:${color};font-weight:700;">[${type}]</span> ${message}`;
+      container.appendChild(row);
+      container.scrollTop = container.scrollHeight;
+    });
   }
+
+  // Hook native callbacks from OxCheats.dylib
+  window.oxCheatsReceive = function(msg) {
+    if (!msg) return;
+    if (msg.type === 'injectResult') {
+      if (msg.ok) {
+        logEvent('INJECT-OK', `Patch applied successfully! Status: ${msg.message || 'Done'}`);
+        setStatus('Patch Active in Free Fire', true);
+      } else {
+        logEvent('INJECT-FAIL', `Native error: ${msg.message || 'Unknown error'}`, true);
+        setStatus('Injection Failed: ' + (msg.message || ''), false);
+      }
+    } else if (msg.type === 'status') {
+      logEvent('SYSTEM', msg.message || JSON.stringify(msg));
+    } else if (msg.type === 'miscAck' || msg.type === 'restoreResult') {
+      logEvent('RESTORE', msg.message || 'Asset restore completed');
+    } else {
+      logEvent('NATIVE', JSON.stringify(msg));
+    }
+  };
 
   // Update Status Dock
   function setStatus(text, isSuccess = false) {
@@ -435,13 +459,21 @@
       });
     }
 
-    // 7. CLEAR CONSOLE
+    // 7. CLEAR CONSOLES
     const btnClear = document.getElementById('btn-clear-log');
     if (btnClear) {
       btnClear.addEventListener('click', () => {
         const consoleLogs = document.getElementById('console-logs');
         if (consoleLogs) consoleLogs.innerHTML = '';
         logEvent('INFO', 'Log console cleared.');
+      });
+    }
+
+    const btnClearAimbot = document.getElementById('btn-clear-log-aimbot');
+    if (btnClearAimbot) {
+      btnClearAimbot.addEventListener('click', () => {
+        const consoleLogs = document.getElementById('console-logs-aimbot');
+        if (consoleLogs) consoleLogs.innerHTML = '';
       });
     }
 
